@@ -79,7 +79,15 @@ type runsto : (p:stmt) -> (s0:state) -> (s1:state) -> Type0 =
 //   runsto (While c b) s s'
 let r_while (#c:expr) (#b:stmt) (#s #s' : state) (pf : runsto (IfZ c (Seq b (While c b)) Skip) s s')
   : runsto (While c b) s s'
-= admit()
+= if (eval_expr s c) = 0
+  then (
+    match pf with
+    | R_IfZ_True #c #seq #skip #s #s' rseq _ -> (
+      match rseq with
+      | R_Seq #b #while #s #s'' #s' rb rwhile -> R_While_True #c #b #s #s'' #s' rb () rwhile
+    )
+  )
+  else R_While_False #c #b #s ()
 
 type cond = state -> bool
 
@@ -91,15 +99,59 @@ type hoare : (pre:cond) -> (p:stmt) -> (post:cond) -> Type0 =
     #pre:cond -> #mid:cond -> #post:cond ->
     hoare pre p mid -> hoare mid q post ->
     hoare pre (Seq p q) post  // {pre} p {mid} /\ {mid} q {post}    ==>    {pre} p;q {post}
+  | H_Assign :
+    #x:var -> #e:expr ->
+    #pre:cond ->
+    hoare (fun s -> pre (override s x (eval_expr s e))) (Assign x e) pre
+  | H_If :
+    #c:expr -> #t:stmt -> #e:stmt ->
+    #pre:cond -> #post:cond ->
+    hoare (fun s -> pre s && (eval_expr s c) = 0) t post ->
+    hoare (fun s -> pre s && (eval_expr s c) <> 0) e post ->
+    hoare pre (IfZ c t e) post
+  | H_While :
+    #e:expr -> #p:stmt ->
+    #inv:cond ->
+    hoare (fun s -> inv s && (eval_expr s e) = 0) p inv ->
+    hoare inv (While e p) (fun s -> inv s && (eval_expr s e) <> 0)
 
 let rec hoare_ok (p:stmt) (pre:cond) (post:cond) (pf : hoare pre p post)
                  (s0 s1 : state) (e_pf : runsto p s0 s1)
   : Lemma (requires pre s0)
           (ensures  post s1)
-= admit()
+= match e_pf with
+  | R_Skip _ -> ()
+  | R_Assign _ -> ()
+  | R_Seq #q #r #s0 #t #s1 rq rr -> (
+    match pf with
+    | H_Seq #q #r #pre #mid #post hq hr -> (
+      hoare_ok q pre mid hq s0 t rq;
+      hoare_ok r mid post hr t s1 rr
+    )
+  )
+  | R_IfZ_True #c #q #r #s0 #s1 rq _ -> (
+    match pf with
+    | H_If #c #q #r #pre #post hq _ -> (
+      hoare_ok q (fun s -> pre s && (eval_expr s c) = 0) post hq s0 s1 rq
+    )
+  )
+  | R_IfZ_False #c #q #r #s0 #s1 rr _ -> (
+    match pf with
+    | H_If #c #q #r #pre #post _ hr -> (
+      hoare_ok r (fun s -> pre s && (eval_expr s c) <> 0) post hr s0 s1 rr
+    )
+  )
+  | R_While_True #c #q #s0 #s' #s1 rq _ rp -> (
+    match pf with
+    | H_While #c #q #pre hq -> (
+      hoare_ok q (fun s -> pre s && (eval_expr s c) = 0) pre hq s0 s' rq;
+      hoare_ok (While c q) pre (fun s -> pre s && (eval_expr s c) <> 0) pf s' s1 rp
+    )
+  )
+  | R_While_False #c #q #s0 _ -> ()
 
 let st0 : state = fun _ -> 0
 
 let test1 : hoare (fun _ -> true) (Assign "x" (Const 1)) (fun s -> s "x" = 1) =
-  admit()
+  H_Assign #"x" #(Const 1) #(fun s -> s "x" = 1)
 
