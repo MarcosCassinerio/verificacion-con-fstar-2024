@@ -202,7 +202,7 @@ let while_wp (inv:cond) (c:expr) (wp_b:wp) : wp =
 let rec cwp (p:stmt) : wp =
   match p with
   | Assign x e -> assign_wp x e
-  | Skip -> fun post s -> post s
+  | Skip -> fun post -> post
   | Seq p q -> fun cond -> cwp p (cwp q cond)
   | IfZ c t e -> ite_wp c (cwp t) (cwp e)
   | While inv c b -> while_wp inv c (cwp b)
@@ -244,9 +244,11 @@ let rec cwp_ok (p:stmt) (post : cond)
         H_Weaken _ _ pf0 () ()
       in
       pf1
-    | Skip -> H_Weaken (cwp Skip post) post (H_Skip post) () ()
-    | Assign x e -> H_Weaken (cwp p post) post (H_Assign #x #e #post) () ()
-    | Seq q r -> H_Seq #q #r #(cwp q (cwp r post)) #(cwp r post) #post (cwp_ok q (cwp r post)) (cwp_ok r post)
+    | Skip -> H_Skip post
+    | Assign x e -> 
+      let ass : hoare (assign_wp x e post) p post = H_Assign #x #e #post in
+      ass
+    | Seq q r -> H_Seq (cwp_ok q (cwp r post)) (cwp_ok r post)
     | IfZ c t e -> H_If (H_Weaken (fun s -> (cwp p post) s /\ (eval_expr s c = 0)) post (cwp_ok t post) () ()) (H_Weaken (fun s -> (cwp p post) s /\ (eval_expr s c <> 0)) post (cwp_ok e post) () ())
 
 (* Agregar 1 a x. *)
